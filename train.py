@@ -16,6 +16,8 @@ import torch.nn.functional as F
 from torch.utils import data
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 import matplotlib.pyplot as plt
+import numpy as np
+import torchvision.transforms as transforms
 
 def main():
     opt = Options().parse()
@@ -27,7 +29,10 @@ def main():
     transform_t = transforms.Compose([transforms.Resize([4, 4]),
                                 transforms.ToTensor(),
                                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-    trainset = MyDataset('xeladataset_train2.csv',5,10,transform_v,transform_t)
+    # xela_dataloader.MyDataset のシグネチャは
+    # MyDataset(image_paths, visual_seq_length, tactile_seq_length, transform_v, transform_t, log, flag)
+    # なので、CSV ではなく graspingdata のルートパスと log/flag を渡す
+    trainset = MyDataset(opt.dataroot, 5, 10, transform_v, transform_t, 1, 'train')
     train_loader = torch.utils.data.DataLoader(
         dataset=trainset,
         batch_size=opt.batchSize,
@@ -35,7 +40,7 @@ def main():
         num_workers=int(opt.workers)
     )
     opt.phase = 'val'
-    validset = MyDataset('xeladataset_test2.csv',5,10,transform_v,transform_t)
+    validset = MyDataset(opt.dataroot, 5, 10, transform_v, transform_t, 1, 'test')
     val_loader = torch.utils.data.DataLoader(
         dataset=validset,
         batch_size=opt.batchSize,
@@ -70,7 +75,26 @@ def main():
     elif opt.model_arch == 'VTFSA_LSTM':
         model = VTFSA_LSTM(visual_cnn_out_dim=(7,7,512),tactile_cnn_out_dim=(7,7,512),lstm_hidden_layers = 2,lstm_hidden_nodes = 64,dropout_p_lstm=0.2,dropout_p_fc=0.5,encoder_fc_dim=64,fc_hidden_dim=64,num_classes=2)
     elif opt.model_arch == 'C3D':
-        model = C3D(v_dim=3*5, img_xv=opt.cropWidth, img_yv=opt.cropHeight, drop_p_v=0.2, fc_hidden_v=256, ch1_v=16,ch2_v=24,ch1_t=8,ch2_t=12,t_dim=3*10, img_xt=4, img_yt=4, drop_p_t=0.2, fc_hidden_t=64,fc_hidden_1=128,num_classes=3)
+        # visual: 3チャネル×5フレーム → v_dim=3*5（train()/valid() で (N,3,5,H,W)->(N,1,15,H,W) に変換）
+        # tactile: 3チャネル×10フレームをそのまま D=10 として扱う（CNN3D1.t_dim=10 に合わせる）
+        model = C3D(
+            v_dim=3 * 5,
+            img_xv=opt.cropWidth,
+            img_yv=opt.cropHeight,
+            drop_p_v=0.2,
+            fc_hidden_v=256,
+            ch1_v=16,
+            ch2_v=24,
+            ch1_t=8,
+            ch2_t=12,
+            t_dim=10,          # 実際の tactile フレーム数に合わせて 10 を渡す
+            img_xt=4,
+            img_yt=4,
+            drop_p_t=0.2,
+            fc_hidden_t=64,
+            fc_hidden_1=128,
+            num_classes=3,
+        )
     if opt.use_cuda:
         model = torch.nn.DataParallel(model).cuda()
     else:
@@ -195,19 +219,27 @@ def train(trainloader, model, optimizer, epoch, use_cuda):
     end = time.time()
 
     bar = Bar('Processing', max=len(trainloader))
-    for batch_idx, (x_visual,x_tactile, targets) in enumerate(trainloader):
+    for batch_idx, (x_visual, x_tactile, targets) in enumerate(trainloader):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        x_tactile,x_visual, targets = torch.autograd.Variable(x_tactile),torch.autograd.Variable(x_visual), torch.autograd.Variable(targets)
+        x_tactile, x_visual, targets = torch.autograd.Variable(x_tactile), torch.autograd.Variable(x_visual), torch.autograd.Variable(targets)
         if use_cuda:
             # inputs = inputs.cuda()
-            x_tactile=x_tactile.cuda()
-            x_visual=x_visual.cuda()
+            x_tactile = x_tactile.cuda()
+            x_visual = x_visual.cuda()
             targets = targets.cuda(non_blocking=True)
 
+        # C3D の visual ブランチ CNN3D は Conv3d(in_channels=1, ...) を想定している。
+        # DataLoader から来る visual は (N, 3, T, H, W) （RGB×フレーム列）なので、
+        # RGB(3チャネル)×Tフレームを深さ方向 D に畳み込んで (N, 1, 3*T, H, W) に変換する。
+        if x_visual.dim() == 5 and x_visual.size(1) == 3:
+            b, c, t, h, w = x_visual.shape  # c=3
+            x_visual = x_visual.permute(0, 2, 1, 3, 4).contiguous()  # (N, T, 3, H, W)
+            x_visual = x_visual.view(b, 1, t * c, h, w)              # (N, 1, 3*T, H, W)
+
         # compute output
-        outputs = model(x_visual,x_tactile)
+        outputs = model(x_visual, x_tactile)
         loss = F.cross_entropy(outputs, targets, reduction='mean')
         # print(loss)
         # print(outputs)
@@ -266,16 +298,21 @@ def valid(testloader, model, epoch, use_cuda):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        x_tactile, x_visual, targets = torch.autograd.Variable(x_tactile), torch.autograd.Variable(
-            x_visual), torch.autograd.Variable(targets)
+        x_tactile, x_visual, targets = torch.autograd.Variable(x_tactile), torch.autograd.Variable(x_visual), torch.autograd.Variable(targets)
         if use_cuda:
             # inputs = inputs.cuda()
             x_tactile = x_tactile.cuda()
             x_visual = x_visual.cuda()
             targets = targets.cuda(non_blocking=True)
 
+        # train() と同様に、visual を (N,3,T,H,W) から (N,1,3*T,H,W) に変換して CNN3D に合わせる
+        if x_visual.dim() == 5 and x_visual.size(1) == 3:
+            b, c, t, h, w = x_visual.shape
+            x_visual = x_visual.permute(0, 2, 1, 3, 4).contiguous()
+            x_visual = x_visual.view(b, 1, t * c, h, w)
+
         # compute output
-        outputs = model(x_visual,x_tactile)
+        outputs = model(x_visual, x_tactile)
         loss = F.cross_entropy(outputs, targets)
         y_pred = torch.max(outputs, 1)[1]  # y_pred != output
         acc =  accuracy_score(y_pred.cpu().data.numpy(), targets.cpu().data.numpy())

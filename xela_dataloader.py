@@ -111,7 +111,7 @@ def train_test_dataset(path,visual_seq_length,tactile_seq_length,log,flag):
     return dataset
 
 class MyDataset(Dataset):
-    def __init__(self, image_paths, visual_seq_length, tactile_seq_length,transform_v,transform_t,log,flag):
+    def __init__(self, image_paths, visual_seq_length, tactile_seq_length, transform_v, transform_t, log, flag):
         self.image_paths = image_paths
         self.visual_seq_length = visual_seq_length
         self.tactile_seq_length = tactile_seq_length
@@ -121,10 +121,10 @@ class MyDataset(Dataset):
         self.label=[]
         self.visual_sequence=[]
         self.tactile_sequence=[]
-        self.classes=['0','1','2']
+        self.classes=['0', '1', '2']
         self.log=log
         self.flag=flag
-        self.dataset=train_test_dataset(self.image_paths,self.visual_seq_length,self.tactile_seq_length,self.log,self.flag)
+        self.dataset=train_test_dataset(self.image_paths, self.visual_seq_length, self.tactile_seq_length, log, flag)
         # self.tactile_sequence_length=[]
         le = LabelEncoder()
         le.fit(self.classes)

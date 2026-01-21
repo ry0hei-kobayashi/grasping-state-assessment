@@ -6,8 +6,12 @@ import numpy as np
 from models.layers import ConvOffset2D
 import torch.nn.functional as F
 import torchvision.models as models
-from LSTHM.LSTHM import *
-from resnet import *
+
+# LSTHM はプロジェクト直下の LSTHM.py として配置されているので、パッケージではなくモジュールとして import する
+from LSTHM import *
+
+# resnet.py は models パッケージ内のモジュールなので、相対パスで import する
+from .resnet import *
 import numpy
 # import resnet
 from mypath import Path
@@ -1261,7 +1265,7 @@ class CNN3D(nn.Module):
         return x
 
 class CNN3D1(nn.Module):
-    def __init__(self, t_dim=30, img_x=4, img_y=4, drop_p=0.2, fc_hidden1=64,ch1=8):#, fc_hidden2=128, num_classes=50):
+    def __init__(self, t_dim=30, img_x=4, img_y=4, drop_p=0.2, fc_hidden1=64, ch1=8):#, fc_hidden2=128, num_classes=50):
         super(CNN3D1, self).__init__()
 
         # set video dimension
@@ -1313,10 +1317,10 @@ class CNN3D1(nn.Module):
         return x
 
 class C3D(nn.Module):
-     def __init__(self, v_dim=15, img_xv=256, img_yv=256, drop_p_v=0.2, fc_hidden_v=256, ch1_v=32,ch2_v=48,ch1_t=8,ch2_t=12,t_dim=30, img_xt=4, img_yt=4, drop_p_t=0.2, fc_hidden_t=64,fc_hidden_1=128,num_classes=3):#, fc_hidden2=128, num_classes=50):
+     def __init__(self, v_dim=15, img_xv=256, img_yv=256, drop_p_v=0.2, fc_hidden_v=256, ch1_v=32, ch2_v=48, ch1_t=8, ch2_t=12, t_dim=30, img_xt=4, img_yt=4, drop_p_t=0.2, fc_hidden_t=64, fc_hidden_1=128, num_classes=3):#, fc_hidden2=128 , num_classes=50):
         super(C3D, self).__init__()
-        self.visual_c3d=CNN3D(t_dim=v_dim, img_x=img_xv, img_y=img_yv, drop_p=drop_p_v, fc_hidden1=fc_hidden_v,ch1=ch1_v,ch2=ch2_v)
-        self.tactile_c3d=CNN3D1(t_dim=t_dim, img_x=img_xt, img_y=img_yt, drop_p=drop_p_t, fc_hidden1=fc_hidden_t,ch1=ch1_t,ch2=ch2_t)
+        self.visual_c3d=CNN3D(t_dim=v_dim, img_x=img_xv, img_y=img_yv, drop_p=drop_p_v, fc_hidden1=fc_hidden_v,ch1=ch1_v, ch2=ch2_v)
+        self.tactile_c3d=CNN3D1(t_dim=t_dim, img_x=img_xt, img_y=img_yt, drop_p=drop_p_t, fc_hidden1=fc_hidden_t,ch1=ch1_t)
         self.fc1 = nn.Linear(fc_hidden_v+fc_hidden_t, fc_hidden_1)
         self.fc2 = nn.Linear(fc_hidden_1, num_classes)
         self.drop_p=drop_p_v
