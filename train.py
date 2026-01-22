@@ -199,10 +199,15 @@ def main():
     )
 
     # Loss and optimizer
+    # optimizer = torch.optim.SGD(model.parameters(), lr=opt.lr) #default
+    optimizer = torch.optim.SGD(
+        model.parameters(), lr=opt.lr, momentum=0.9, weight_decay=1e-4, nesterov=True
+    )  # 2026/01/23 7:23
+
     # criterion = nn.CrossEntropyLoss(reduction='sum')
     # optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr,betas=(0.9, 0.999), eps=1e-08,weight_decay=opt.weight_decay)
-    optimizer = torch.optim.SGD(model.parameters(), lr=opt.lr)
     # model.apply(init_weights_xavier)
+
     # Resume
     title = opt.name
     if opt.resume:
@@ -299,6 +304,7 @@ def main():
         #        eta,
         #    ]
         # )
+
         train_acc_list.append(train_acc)
         train_loss_list.append(train_loss)
         test_loss_list.append(test_loss)
@@ -315,14 +321,15 @@ def main():
         remaining_epochs = opt.epochs - (epoch + 1)
 
         eta = avg_epoch_time * remaining_epochs
+
         (
             used_mb,
             total_mb,
             util_pct,
-            peak_alloc,
+            peak_alloc_mb,
             peak_reserved_mb,
-            peak_alloc,
-            peak_reserved_mb,
+            alloc_mb,
+            reserved_mb,
         ) = get_vram_stats()
 
         logger.append(
@@ -339,7 +346,7 @@ def main():
                 used_mb,
                 total_mb,
                 util_pct,
-                peak_alloc,
+                peak_alloc_mb,
                 peak_reserved_mb,
             ]
         )
