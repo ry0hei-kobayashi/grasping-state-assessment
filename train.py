@@ -5,6 +5,7 @@ import shutil
 import time
 import torch.nn.parallel
 from options import Options
+
 # from gelsight_feature_loader import MyFeatureDataset
 from xela_dataloader import MyDataset
 from utils import Bar, Logger, AverageMeter, savefig, ACC
@@ -19,62 +20,156 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torchvision.transforms as transforms
 
+try:
+    import pynvml
+
+    _NVML_OK = True
+except Exception:
+    _NVML_OK = False
+
+
 def main():
     opt = Options().parse()
     start_epoch = opt.start_epoch  # start from epoch 0 or last checkpoint epoch
-    opt.phase = 'train'
-    transform_v = transforms.Compose([transforms.Resize([opt.cropWidth, opt.cropHeight]),
-                                transforms.ToTensor(),
-                                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-    transform_t = transforms.Compose([transforms.Resize([4, 4]),
-                                transforms.ToTensor(),
-                                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+    opt.phase = "train"
+    transform_v = transforms.Compose(
+        [
+            transforms.Resize([opt.cropWidth, opt.cropHeight]),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
+    transform_t = transforms.Compose(
+        [
+            transforms.Resize([4, 4]),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
     # xela_dataloader.MyDataset のシグネチャは
     # MyDataset(image_paths, visual_seq_length, tactile_seq_length, transform_v, transform_t, log, flag)
     # なので、CSV ではなく graspingdata のルートパスと log/flag を渡す
-    trainset = MyDataset(opt.dataroot, 5, 10, transform_v, transform_t, 1, 'train')
+    trainset = MyDataset(opt.dataroot, 5, 10, transform_v, transform_t, 1, "train")
     train_loader = torch.utils.data.DataLoader(
         dataset=trainset,
         batch_size=opt.batchSize,
         shuffle=True,
-        num_workers=int(opt.workers)
+        num_workers=int(opt.workers),
     )
-    opt.phase = 'val'
-    validset = MyDataset(opt.dataroot, 5, 10, transform_v, transform_t, 1, 'test')
+    opt.phase = "val"
+    validset = MyDataset(opt.dataroot, 5, 10, transform_v, transform_t, 1, "test")
     val_loader = torch.utils.data.DataLoader(
         dataset=validset,
         batch_size=opt.batchSize,
         shuffle=False,
-        num_workers=int(opt.workers)
+        num_workers=int(opt.workers),
     )
 
     # acc_list = []
     # for i in range(10):
 
     # Model
-    if opt.model_arch == 'early_fusion':
-        model = EarlyFusion(preTrain='resnet',fc_early_dim=64,LSTM_layers=2,LSTM_units=64,LSTM_dropout=0.5,num_classes=2,dropout_fc=0.2)
-    elif opt.model_arch == 'early_fusionTA':
-        model = EarlyFusionTA0(preTrain='resnet',fc_early_dim=64,T=8,LSTM_layers=2,LSTM_units=64,LSTM_dropout=0.5,num_classes=2,dropout_fc=0.2)
-    elif opt.model_arch == 'Attearly_fusionTA':
-        model=AttEarlyFusionTA(preTrain='resnet',fc_early_dim=64,T=8,LSTM_layers=2,LSTM_units=64,LSTM_dropout=0.5,num_classes=2,dropout_fc=0.2)
-    elif opt.model_arch == 'Attearly_fusion':
-        model= AttEarlyFusion(preTrain='resnet',fc_early_dim=64,T=8,LSTM_layers=2,LSTM_units=64,LSTM_dropout=0.5,num_classes=2,dropout_fc=0.2)
-    elif opt.model_arch == 'LateFusion':
-        model = LateFusion(preTrain='resnet', fc_early_dim=64, T=8, LSTM_layers=2, LSTM_units=64,
-                                      LSTM_dropout=0.5, num_classes=2, dropout_fc=0.2)
-    elif opt.model_arch == 'ModalFN':
-        model = ModalFN(preTrain='resnet', fc_early_dim=64, T=8, LSTM_layers=2, LSTM_units=64,
-                                      LSTM_dropout=0.5, num_classes=2, dropout_fc=0.2)
-    elif opt.model_arch == 'ModalFNAtt0':
-        model = ModalFNAtt0(preTrain='resnet', fc_early_dim=64, T=8, LSTM_layers=2, LSTM_units=64,
-                                      LSTM_dropout=0.5, num_classes=2, dropout_fc=0.2)
-    elif opt.model_arch == 'MARN':
-        model = MARN(preTrain='resnet', fc_early_dim=64, T=8, cell_size=64, in_size=64,
-                                      hybrid_in_size=64,num_atts=4, num_classes=2, dropout_fc=0.2)
-    elif opt.model_arch == 'VTFSA_LSTM':
-        model = VTFSA_LSTM(visual_cnn_out_dim=(7,7,512),tactile_cnn_out_dim=(7,7,512),lstm_hidden_layers = 2,lstm_hidden_nodes = 64,dropout_p_lstm=0.2,dropout_p_fc=0.5,encoder_fc_dim=64,fc_hidden_dim=64,num_classes=2)
-    elif opt.model_arch == 'C3D':
+    if opt.model_arch == "early_fusion":
+        model = EarlyFusion(
+            preTrain="resnet",
+            fc_early_dim=64,
+            LSTM_layers=2,
+            LSTM_units=64,
+            LSTM_dropout=0.5,
+            num_classes=2,
+            dropout_fc=0.2,
+        )
+    elif opt.model_arch == "early_fusionTA":
+        model = EarlyFusionTA0(
+            preTrain="resnet",
+            fc_early_dim=64,
+            T=8,
+            LSTM_layers=2,
+            LSTM_units=64,
+            LSTM_dropout=0.5,
+            num_classes=2,
+            dropout_fc=0.2,
+        )
+    elif opt.model_arch == "Attearly_fusionTA":
+        model = AttEarlyFusionTA(
+            preTrain="resnet",
+            fc_early_dim=64,
+            T=8,
+            LSTM_layers=2,
+            LSTM_units=64,
+            LSTM_dropout=0.5,
+            num_classes=2,
+            dropout_fc=0.2,
+        )
+    elif opt.model_arch == "Attearly_fusion":
+        model = AttEarlyFusion(
+            preTrain="resnet",
+            fc_early_dim=64,
+            T=8,
+            LSTM_layers=2,
+            LSTM_units=64,
+            LSTM_dropout=0.5,
+            num_classes=2,
+            dropout_fc=0.2,
+        )
+    elif opt.model_arch == "LateFusion":
+        model = LateFusion(
+            preTrain="resnet",
+            fc_early_dim=64,
+            T=8,
+            LSTM_layers=2,
+            LSTM_units=64,
+            LSTM_dropout=0.5,
+            num_classes=2,
+            dropout_fc=0.2,
+        )
+    elif opt.model_arch == "ModalFN":
+        model = ModalFN(
+            preTrain="resnet",
+            fc_early_dim=64,
+            T=8,
+            LSTM_layers=2,
+            LSTM_units=64,
+            LSTM_dropout=0.5,
+            num_classes=2,
+            dropout_fc=0.2,
+        )
+    elif opt.model_arch == "ModalFNAtt0":
+        model = ModalFNAtt0(
+            preTrain="resnet",
+            fc_early_dim=64,
+            T=8,
+            LSTM_layers=2,
+            LSTM_units=64,
+            LSTM_dropout=0.5,
+            num_classes=2,
+            dropout_fc=0.2,
+        )
+    elif opt.model_arch == "MARN":
+        model = MARN(
+            preTrain="resnet",
+            fc_early_dim=64,
+            T=8,
+            cell_size=64,
+            in_size=64,
+            hybrid_in_size=64,
+            num_atts=4,
+            num_classes=2,
+            dropout_fc=0.2,
+        )
+    elif opt.model_arch == "VTFSA_LSTM":
+        model = VTFSA_LSTM(
+            visual_cnn_out_dim=(7, 7, 512),
+            tactile_cnn_out_dim=(7, 7, 512),
+            lstm_hidden_layers=2,
+            lstm_hidden_nodes=64,
+            dropout_p_lstm=0.2,
+            dropout_p_fc=0.5,
+            encoder_fc_dim=64,
+            fc_hidden_dim=64,
+            num_classes=2,
+        )
+    elif opt.model_arch == "C3D":
         # visual: 3チャネル×5フレーム → v_dim=3*5（train()/valid() で (N,3,5,H,W)->(N,1,15,H,W) に変換）
         # tactile: 3チャネル×10フレームをそのまま D=10 として扱う（CNN3D1.t_dim=10 に合わせる）
         model = C3D(
@@ -87,7 +182,7 @@ def main():
             ch2_v=24,
             ch1_t=8,
             ch2_t=12,
-            t_dim=10,          # 実際の tactile フレーム数に合わせて 10 を渡す
+            t_dim=10,  # 実際の tactile フレーム数に合わせて 10 を渡す
             img_xt=4,
             img_yt=4,
             drop_p_t=0.2,
@@ -98,8 +193,10 @@ def main():
     if opt.use_cuda:
         model = torch.nn.DataParallel(model).cuda()
     else:
-        model.to( torch.device('cpu') )
-    print('Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
+        model.to(torch.device("cpu"))
+    print(
+        "Total params: %.2fM" % (sum(p.numel() for p in model.parameters()) / 1000000.0)
+    )
 
     # Loss and optimizer
     # criterion = nn.CrossEntropyLoss(reduction='sum')
@@ -110,33 +207,62 @@ def main():
     title = opt.name
     if opt.resume:
         # Load checkpoint.
-        print('==> Resuming from checkpoint..')
-        assert os.path.isfile(opt.resume), 'Error: no checkpoint directory found!'
+        print("==> Resuming from checkpoint..")
+        assert os.path.isfile(opt.resume), "Error: no checkpoint directory found!"
         opt.checkpoint = os.path.dirname(opt.resume)
         checkpoint = torch.load(opt.resume)
-        best_acc = checkpoint['best_acc']
-        start_epoch = checkpoint['epoch']
-        model.load_state_dict(checkpoint['state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        logger = Logger(os.path.join(opt.checkpoint, 'log.txt'), title=title, resume=True)
+        best_acc = checkpoint["best_acc"]
+        start_epoch = checkpoint["epoch"]
+        model.load_state_dict(checkpoint["state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        logger = Logger(
+            os.path.join(opt.checkpoint, "log.txt"), title=title, resume=True
+        )
     else:
-        logger = Logger(os.path.join(opt.checkpoint, 'log.txt'), title=title)
-        logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Valid PSNR.'])
+        logger = Logger(os.path.join(opt.checkpoint, "log.txt"), title=title)
+        # logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Valid PSNR.'])
+        logger.set_names(
+            [
+                "Learning Rate",
+                "Train Loss",
+                "Train Acc",
+                "Test Loss",
+                "Test Acc",
+                "Best Acc (Test).",
+                "Elasped(s)",
+                "EpochTime(s)",
+                "ETA(s)",
+                "VRAM_used(MB)",
+                "VRAM_total(MB)",
+                "VRAM_util(%)",
+                "VRAM_peak_alloc(MB)",
+                "VRAM_peak_reserved(MB)",
+            ]
+        )
 
     if opt.evaluate:
-        print('\nEvaluation only')
+        print("\nEvaluation only")
         val_loss, val_psnr = valid(val_loader, model, start_epoch, opt.use_cuda)
-        print(' Test Loss:  %.8f, Test PSNR:  %.2f' % (val_loss, val_psnr))
+        print(" Test Loss:  %.8f, Test PSNR:  %.2f" % (val_loss, val_psnr))
         return
 
     # Train and val
 
     best_acc = 0
-    train_acc_list=[]
-    train_loss_list=[]
-    test_acc_list=[]
-    test_loss_list=[]
+    train_acc_list = []
+    train_loss_list = []
+    test_acc_list = []
+    test_loss_list = []
+
+    train_start_time = time.time()
+
     for epoch in range(start_epoch, opt.epochs):
+
+        epoch_start_time = time.time()
+
+        if opt.use_cuda and torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
+
         # adjust_learning_rate(optimizer, epoch, opt)
         # torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=50, verbose=False,
         #                                            threshold=0.0001, threshold_mode='rel', cooldown=20, min_lr=0,
@@ -152,13 +278,27 @@ def main():
         # else:
         #     opt.lr=0.00000001
 
-        print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, opt.epochs, opt.lr))
+        print("\nEpoch: [%d | %d] LR: %f" % (epoch + 1, opt.epochs, opt.lr))
 
-        train_loss,train_acc = train(train_loader, model,  optimizer, epoch, opt.use_cuda)
-        test_loss, test_acc= valid(val_loader, model,  epoch, opt.use_cuda)
+        train_loss, train_acc = train(
+            train_loader, model, optimizer, epoch, opt.use_cuda
+        )
+        test_loss, test_acc = valid(val_loader, model, epoch, opt.use_cuda)
 
         # append logger file
-        logger.append([opt.lr, train_loss, test_loss, test_acc])
+        # logger.append([opt.lr, train_loss, test_loss, test_acc])
+        # logger.append(
+        #    [
+        #        opt.lr,
+        #        train_loss,
+        #        test_loss,
+        #        test_acc,
+        #        best_acc,
+        #        elapsed,
+        #        epoch_time,
+        #        eta,
+        #    ]
+        # )
         train_acc_list.append(train_acc)
         train_loss_list.append(train_loss)
         test_loss_list.append(test_loss)
@@ -166,14 +306,57 @@ def main():
         # save model
         is_best = test_acc > best_acc
         best_acc = max(test_acc, best_acc)
-        save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
-                'acc': test_acc,
-                'best_acc': best_acc,
-                'optimizer' : optimizer.state_dict(),
-            }, is_best, checkpoint=opt.checkpoint)
-        print('Best acc:')
+
+        epoch_time = time.time() - epoch_start_time
+        elapsed = time.time() - train_start_time
+
+        done_epochs = epoch - start_epoch + 1
+        avg_epoch_time = elapsed / max(done_epochs, 1)
+        remaining_epochs = opt.epochs - (epoch + 1)
+
+        eta = avg_epoch_time * remaining_epochs
+        (
+            used_mb,
+            total_mb,
+            util_pct,
+            peak_alloc,
+            peak_reserved_mb,
+            peak_alloc,
+            peak_reserved_mb,
+        ) = get_vram_stats()
+
+        logger.append(
+            [
+                opt.lr,
+                train_loss,
+                train_acc,
+                test_loss,
+                test_acc,
+                best_acc,
+                elapsed,
+                epoch_time,
+                eta,
+                used_mb,
+                total_mb,
+                util_pct,
+                peak_alloc,
+                peak_reserved_mb,
+            ]
+        )
+
+        save_checkpoint(
+            {
+                "epoch": epoch + 1,
+                "state_dict": model.state_dict(),
+                "acc": test_acc,
+                "best_acc": best_acc,
+                "optimizer": optimizer.state_dict(),
+                "elapsed_sec": elapsed,
+            },
+            is_best,
+            checkpoint=opt.checkpoint,
+        )
+        print("Best acc:")
         print(best_acc)
 
         # acc_list.append(best_acc)
@@ -183,15 +366,41 @@ def main():
     # print("average acc:",ave_acc/len(acc_list))
     logger.close()
     np.save(
-        'XELA_results/train_acc_' + opt.model_arch + str(opt.batchSize) + '_' + str(opt.lr) + '.npy',
-        train_acc_list)
-    np.save('XELA_results/train_loss_' + opt.model_arch + str(opt.batchSize) + '_' + str(opt.lr) + '.npy', train_loss_list)
+        "XELA_results/train_acc_"
+        + opt.model_arch
+        + str(opt.batchSize)
+        + "_"
+        + str(opt.lr)
+        + ".npy",
+        train_acc_list,
+    )
     np.save(
-        'XELA_results/test_acc_' + opt.model_arch + str(opt.batchSize) + '_' + str(opt.lr) + '.npy',
-        test_acc_list)
+        "XELA_results/train_loss_"
+        + opt.model_arch
+        + str(opt.batchSize)
+        + "_"
+        + str(opt.lr)
+        + ".npy",
+        train_loss_list,
+    )
     np.save(
-        'XELA_results/test_loss_' + opt.model_arch + str(opt.batchSize) + '_' + str(opt.lr) + '.npy',
-        test_loss_list)
+        "XELA_results/test_acc_"
+        + opt.model_arch
+        + str(opt.batchSize)
+        + "_"
+        + str(opt.lr)
+        + ".npy",
+        test_acc_list,
+    )
+    np.save(
+        "XELA_results/test_loss_"
+        + opt.model_arch
+        + str(opt.batchSize)
+        + "_"
+        + str(opt.lr)
+        + ".npy",
+        test_loss_list,
+    )
     plt.plot(train_loss_list)
     plt.plot(train_acc_list)
     plt.plot(test_loss_list)
@@ -200,11 +409,6 @@ def main():
     plt.show()
     # logger.plot()
     # savefig(os.path.join(opt.checkpoint, 'log'+'.eps'))
-
-
-
-
-
 
 
 def train(trainloader, model, optimizer, epoch, use_cuda):
@@ -218,12 +422,16 @@ def train(trainloader, model, optimizer, epoch, use_cuda):
     psnr_input = AverageMeter()
     end = time.time()
 
-    bar = Bar('Processing', max=len(trainloader))
+    bar = Bar("Processing", max=len(trainloader))
     for batch_idx, (x_visual, x_tactile, targets) in enumerate(trainloader):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        x_tactile, x_visual, targets = torch.autograd.Variable(x_tactile), torch.autograd.Variable(x_visual), torch.autograd.Variable(targets)
+        x_tactile, x_visual, targets = (
+            torch.autograd.Variable(x_tactile),
+            torch.autograd.Variable(x_visual),
+            torch.autograd.Variable(targets),
+        )
         if use_cuda:
             # inputs = inputs.cuda()
             x_tactile = x_tactile.cuda()
@@ -236,20 +444,18 @@ def train(trainloader, model, optimizer, epoch, use_cuda):
         if x_visual.dim() == 5 and x_visual.size(1) == 3:
             b, c, t, h, w = x_visual.shape  # c=3
             x_visual = x_visual.permute(0, 2, 1, 3, 4).contiguous()  # (N, T, 3, H, W)
-            x_visual = x_visual.view(b, 1, t * c, h, w)              # (N, 1, 3*T, H, W)
+            x_visual = x_visual.view(b, 1, t * c, h, w)  # (N, 1, 3*T, H, W)
 
         # compute output
         outputs = model(x_visual, x_tactile)
-        loss = F.cross_entropy(outputs, targets, reduction='mean')
+        loss = F.cross_entropy(outputs, targets, reduction="mean")
         # print(loss)
         # print(outputs)
         y_pred = torch.max(outputs, 1)[1]  # y_pred != output
         # print(y_pred)
         # print(targets)
-        acc =  accuracy_score(y_pred.cpu().data.numpy(), targets.cpu().data.numpy())
+        acc = accuracy_score(y_pred.cpu().data.numpy(), targets.cpu().data.numpy())
         # psnr_i = PSNR(inputs, targets)
-
-
 
         # measure the result
         losses.update(loss.item(), x_tactile.size(0))
@@ -266,20 +472,20 @@ def train(trainloader, model, optimizer, epoch, use_cuda):
         end = time.time()
 
         # plot progress | PSNR: {psnr: .4f} | PSNR(input): {psnr_in: .4f}
-        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f}| ACC(input): {acc: .4f}'.format(
-                    batch=batch_idx + 1,
-                    size=len(trainloader),
-                    data=data_time.avg,
-                    bt=batch_time.avg,
-                    total=bar.elapsed_td,
-                    eta=bar.eta_td,
-                    loss=losses.avg,
-                    acc=avg_acc.avg,
-                    # psnr_in=psnr_input.avg
-                    )
+        bar.suffix = "({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f}| ACC(input): {acc: .4f}".format(
+            batch=batch_idx + 1,
+            size=len(trainloader),
+            data=data_time.avg,
+            bt=batch_time.avg,
+            total=bar.elapsed_td,
+            eta=bar.eta_td,
+            loss=losses.avg,
+            acc=avg_acc.avg,
+            # psnr_in=psnr_input.avg
+        )
         bar.next()
     bar.finish()
-    return losses.avg,avg_acc.avg
+    return losses.avg, avg_acc.avg
 
 
 def valid(testloader, model, epoch, use_cuda):
@@ -293,12 +499,16 @@ def valid(testloader, model, epoch, use_cuda):
     psnr_input = AverageMeter()
     end = time.time()
 
-    bar = Bar('Processing', max=len(testloader))
+    bar = Bar("Processing", max=len(testloader))
     for batch_idx, (x_visual, x_tactile, targets) in enumerate(testloader):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        x_tactile, x_visual, targets = torch.autograd.Variable(x_tactile), torch.autograd.Variable(x_visual), torch.autograd.Variable(targets)
+        x_tactile, x_visual, targets = (
+            torch.autograd.Variable(x_tactile),
+            torch.autograd.Variable(x_visual),
+            torch.autograd.Variable(targets),
+        )
         if use_cuda:
             # inputs = inputs.cuda()
             x_tactile = x_tactile.cuda()
@@ -315,7 +525,7 @@ def valid(testloader, model, epoch, use_cuda):
         outputs = model(x_visual, x_tactile)
         loss = F.cross_entropy(outputs, targets)
         y_pred = torch.max(outputs, 1)[1]  # y_pred != output
-        acc =  accuracy_score(y_pred.cpu().data.numpy(), targets.cpu().data.numpy())
+        acc = accuracy_score(y_pred.cpu().data.numpy(), targets.cpu().data.numpy())
         # psnr_i = PSNR(inputs, targets)
 
         # measure the result
@@ -323,13 +533,12 @@ def valid(testloader, model, epoch, use_cuda):
         avg_acc.update(acc, x_tactile.size(0))
         # psnr_input.update(psnr_i, inputs.size(0))
 
-
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
         # plot progress | PSNR: {psnr: .4f} | PSNR(input): {psnr_in: .4f}
-        bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f}| ACC(input): {acc: .4f}'.format(
+        bar.suffix = "({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f}| ACC(input): {acc: .4f}".format(
             batch=batch_idx + 1,
             size=len(testloader),
             data=data_time.avg,
@@ -346,17 +555,75 @@ def valid(testloader, model, epoch, use_cuda):
 
 
 def adjust_learning_rate(optimizer, epoch, opt):
-    if epoch % opt.schedule ==0 and epoch !=0 :
+    if epoch % opt.schedule == 0 and epoch != 0:
         opt.lr *= opt.gamma
         for param_group in optimizer.param_groups:
-            param_group['lr'] = opt.lr
+            param_group["lr"] = opt.lr
 
 
-def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pth.tar'):
+def save_checkpoint(
+    state, is_best, checkpoint="checkpoint", filename="checkpoint.pth.tar"
+):
     filepath = os.path.join(checkpoint, filename)
     torch.save(state, filepath)
     if is_best:
-        shutil.copyfile(filepath, os.path.join(checkpoint, 'model_best.pth.tar'))
+        shutil.copyfile(filepath, os.path.join(checkpoint, "model_best.pth.tar"))
+
+
+def get_vram_stats():
+    """
+    Returns (used_mb, total_mb, util_pct, peak_alloc_mb, peak_reserved_mb, alloc_mb, reserved_mb)
+    - used/total/util は NVML があれば正確（= nvidia-smi 相当）
+    - peak/alloc/reserved は PyTorch の CUDA allocator 由来（学習プロセスが確保した分）
+    DataParallel の場合は全GPUを合算して返す
+    """
+    if not torch.cuda.is_available():
+        return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
+    n_dev = torch.cuda.device_count()
+
+    # PyTorch allocator stats（合算）
+    alloc = 0
+    reserved = 0
+    peak_alloc = 0
+    peak_reserved = 0
+    for d in range(n_dev):
+        alloc += torch.cuda.memory_allocated(d)
+        reserved += torch.cuda.memory_reserved(d)
+        peak_alloc += torch.cuda.max_memory_allocated(d)
+        peak_reserved += torch.cuda.max_memory_reserved(d)
+
+    alloc_mb = alloc / (1024**2)
+    reserved_mb = reserved / (1024**2)
+    peak_alloc_mb = peak_alloc / (1024**2)
+    peak_reserved_mb = peak_reserved / (1024**2)
+
+    # NVML stats（合算）
+    used_mb = 0.0
+    total_mb = 0.0
+    util_pct = 0.0
+    if _NVML_OK:
+        try:
+            pynvml.nvmlInit()
+            for d in range(n_dev):
+                h = pynvml.nvmlDeviceGetHandleByIndex(d)
+                mem = pynvml.nvmlDeviceGetMemoryInfo(h)
+                used_mb += mem.used / (1024**2)
+                total_mb += mem.total / (1024**2)
+            if total_mb > 0:
+                util_pct = 100.0 * used_mb / total_mb
+        except Exception:
+            pass
+
+    return (
+        used_mb,
+        total_mb,
+        util_pct,
+        peak_alloc_mb,
+        peak_reserved_mb,
+        alloc_mb,
+        reserved_mb,
+    )
 
 
 if __name__ == "__main__":
