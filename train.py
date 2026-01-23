@@ -22,14 +22,19 @@ import torchvision.transforms as transforms
 
 try:
     import pynvml
-
     _NVML_OK = True
+    print("nvml is True")
 except Exception:
+    print("nvml is false")
     _NVML_OK = False
 
 
 def main():
     opt = Options().parse()
+
+    os.makedirs("XELA_results", exist_ok=True)
+    os.makedirs(opt.checkpoint, exist_ok=True)
+
     start_epoch = opt.start_epoch  # start from epoch 0 or last checkpoint epoch
     opt.phase = "train"
     transform_v = transforms.Compose(
@@ -199,10 +204,7 @@ def main():
     )
 
     # Loss and optimizer
-    # optimizer = torch.optim.SGD(model.parameters(), lr=opt.lr) #default
-    optimizer = torch.optim.SGD(
-        model.parameters(), lr=opt.lr, momentum=0.9, weight_decay=1e-4, nesterov=True
-    )  # 2026/01/23 7:23
+    optimizer = torch.optim.SGD(model.parameters(), lr=opt.lr) #default
 
     # criterion = nn.CrossEntropyLoss(reduction='sum')
     # optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr,betas=(0.9, 0.999), eps=1e-08,weight_decay=opt.weight_decay)
@@ -414,8 +416,8 @@ def main():
     plt.plot(test_acc_list)
 
     plt.show()
-    # logger.plot()
-    # savefig(os.path.join(opt.checkpoint, 'log'+'.eps'))
+    logger.plot()
+    savefig(os.path.join(opt.checkpoint, 'log'+'.eps'))
 
 
 def train(trainloader, model, optimizer, epoch, use_cuda):

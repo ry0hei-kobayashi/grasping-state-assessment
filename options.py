@@ -34,6 +34,7 @@ class Options(object):
         self.parser.add_argument('--gpu_ids', type=str, default='1,4,5,7', help='gpu ids: \
                                 e.g. 0  0,1,2, 0,2. use -1 for CPU')
         self.parser.add_argument('--manualSeed', type=int, help='manual seed')
+        self.parser.add_argument('--use_cuda', type=bool, default=False, help='use_cuda bool')
         # Dataset
         self.parser.add_argument('--dataroot', type=str, default="./ICIPDataset", help='path to\
                                 images (should have subfolders train/blurred, train/sharp,\

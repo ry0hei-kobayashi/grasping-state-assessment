@@ -5,5 +5,7 @@ python3 train.py \
   --name exp_c3d \
   --batchSize 8 \
   --lr 1e-4 \
-  --epochs 300 \
-  --gpu_ids 0
+  --epochs 200 \
+  --gpu_ids 0 \
+  --use_cuda True
+
