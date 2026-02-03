@@ -49,55 +49,71 @@ def cat2labels(label_encoder, y_cat):
 
 
 def load_data(path, clas, init, length, log):
-
-    num = 0
-    # csvFile_train = open("csv_files/xeladataset_" +clas+'_'+str(length)+'_'+str(log)+".csv", 'w+')
-    # csvFile_test=open("xela_deligrasp_test" + str(frame) +'_'+str(log)+ '_'+str(train_val_radio) +".csv", 'w')
-    # writer_train= csv.writer(csvFile_train)
-
-    # nestl1=csv.reader(open(clas+'_new.csv','r'))
-    caselist = os.listdir(path + "/" + clas + "/")
-    # writer_train = csv.writer(csvFile_train)
-    # writer_test=csv.writer(csvFile_test)
-
-    # dataset_all=[]
-    # for row in nestl1:
-    #     dataset_all.append(row)
-    # dataset_train,dataset_test=train_test_split(dataset_all,test_size=1-train_val_radio)
     cases = []
+    caselist = os.listdir(os.path.join(path, clas))
+
     for case in caselist:
-        # print(case)
-        # rowTemßp=[]
-        pathTemp_visual = path + "/" + clas + "/" + case + "/" + "visual/"
-        pathTemp_tactile = path + "/" + clas + "/" + case + "/" + "tactile/"
-        time_list_visual = np.load(pathTemp_visual + "visual_time_list.npy")
-        time_lst_tactile = np.load(pathTemp_tactile + "tactile_time_list.npy")
-        num_visual = len(os.listdir(pathTemp_visual)) - 1
-        num_tactile = len(os.listdir(pathTemp_tactile)) - 1
+        pathTemp_visual = os.path.join(path, clas, case, "visual")
+        pathTemp_tactile = os.path.join(path, clas, case, "tactile")
+
+        v_time_path = os.path.join(pathTemp_visual, "visual_time_list.npy")
+        t_time_path = os.path.join(pathTemp_tactile, "tactile_time_list.npy")
+
+        try:
+            time_list_visual = np.load(v_time_path)
+            time_lst_tactile = np.load(t_time_path)
+        except Exception as e:
+            print(f"[SKIP] npy load failed: {clas}/{case}  err={e}")
+            continue
+
+        # ★ ここが今回のエラー対策：空ならスキップ
+        if time_list_visual.size == 0:
+            print(
+                f"[SKIP] visual_time_list is EMPTY: {clas}/{case}  path={v_time_path}"
+            )
+            continue
+
+        # フレーム数（画像枚数）は jpg を基準に数える（npy とズレる場合がある）
+        visual_imgs = sorted(glob.glob(os.path.join(pathTemp_visual, "*.jpg")))
+        tactile_imgs = sorted(glob.glob(os.path.join(pathTemp_tactile, "*.jpg")))
+        num_visual = len(visual_imgs)
+        num_tactile = len(tactile_imgs)
+
+        # init/length 的に成立しないケースはスキップ
+        if num_visual <= init + length:
+            print(
+                f"[SKIP] too short visual seq: {clas}/{case} num_visual={num_visual} init={init} length={length}"
+            )
+            continue
+        if time_list_visual.shape[0] <= init + length:
+            print(
+                f"[SKIP] time_list_visual too short: {clas}/{case} len(time)={len(time_list_visual)} init={init} length={length}"
+            )
+            continue
+
         width, force, label = case.split("_")
-        # print(num_visual,num_tactile)
+
         for i in range(init, num_visual - length - 1, log):
-            rowTemp = []
-            # print(i)
-            rowTemp.append(width)
-            rowTemp.append(force)
-            rowTemp.append(label)
+            rowTemp = [width, force, label]
+
+            # visual paths
             for k in range(length):
-                rowTemp.append(pathTemp_visual + str(i + k) + ".jpg")
-                # print(path+case,i+k)
+                rowTemp.append(os.path.join(pathTemp_visual, f"{i+k}.jpg"))
+
+            # tactile paths in time window
             tactile_time_length = 0
-            for j in range(num_tactile):
+            for j in range(min(num_tactile, len(time_lst_tactile))):
                 if (
                     time_lst_tactile[j] > time_list_visual[i]
                     and time_lst_tactile[j] < time_list_visual[i + length]
                 ):
-                    rowTemp.append(pathTemp_tactile + str(j) + ".jpg")
+                    rowTemp.append(os.path.join(pathTemp_tactile, f"{j}.jpg"))
                     tactile_time_length += 1
+
             rowTemp.append(tactile_time_length)
             cases.append(rowTemp)
+
     return cases
-    # writer_train.writerow(rowTemp)
-    # csvFile_train.close()
 
 
 DEFAULT_INIT = {
