@@ -35,10 +35,8 @@ def main():
     opt = Options().parse()
     title = opt.name
 
-    # Options側で決めたrun_dirをそのまま使う（ここが唯一の正）
     run_dir = opt.run_dir
-    results_dir = opt.results_dir  # Optionsで作ってある想定
-    # opt.checkpoint も Optionsで run_dir/checkpoints に設定済み
+    results_dir = opt.results_dir
 
     os.makedirs(results_dir, exist_ok=True)
     os.makedirs(opt.checkpoint, exist_ok=True)
@@ -66,7 +64,18 @@ def main():
     # xela_dataloader.MyDataset のシグネチャは
     # MyDataset(image_paths, visual_seq_length, tactile_seq_length, transform_v, transform_t, log, flag)
     # なので、CSV ではなく graspingdata のルートパスと log/flag を渡す
-    trainset = MyDataset(opt.dataroot, 5, 10, transform_v, transform_t, 1, "train")
+    # trainset = MyDataset(opt.dataroot, 5, 10, transform_v, transform_t, 1, "train")
+    trainset = MyDataset(
+        opt.dataroot,
+        5,
+        10,
+        transform_v,
+        transform_t,
+        log=1,
+        flag="train",
+        train_classes=opt.train_classes,
+        test_classes=opt.test_classes,
+    )
     train_loader = torch.utils.data.DataLoader(
         dataset=trainset,
         batch_size=opt.batchSize,
@@ -74,7 +83,18 @@ def main():
         num_workers=int(opt.workers),
     )
     opt.phase = "val"
-    validset = MyDataset(opt.dataroot, 5, 10, transform_v, transform_t, 1, "test")
+    # validset = MyDataset(opt.dataroot, 5, 10, transform_v, transform_t, 1, "test")
+    validset = MyDataset(
+        opt.dataroot,
+        5,
+        10,
+        transform_v,
+        transform_t,
+        log=1,
+        flag="test",
+        train_classes=opt.train_classes,
+        test_classes=opt.test_classes,
+    )
     val_loader = torch.utils.data.DataLoader(
         dataset=validset,
         batch_size=opt.batchSize,

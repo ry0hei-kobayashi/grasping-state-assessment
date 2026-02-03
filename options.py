@@ -97,6 +97,20 @@ class Options(object):
                                 images (should have subfolders train/blurred, train/sharp,\
                                 val/blurred, val/sharp, test/blurred, test/sharp etc)",
         )
+
+        self.parser.add_argument(
+            "--train_classes",
+            type=str,
+            default="appbox,baisui,bingho,cokele,haitun,jianjo,pacup1,pacup2,zhijin",
+            help="comma-separated class names used for TRAIN split",
+        )
+        self.parser.add_argument(
+            "--test_classes",
+            type=str,
+            default="cesbon,nongf1,songsu",
+            help="comma-separated class names used for TEST split",
+        )
+
         self.parser.add_argument(
             "--phase",
             type=str,
@@ -168,6 +182,12 @@ class Options(object):
             self.initialize()
 
         self.opt = self.parser.parse_args()
+
+        def _split_csv(s: str):
+            return [x.strip() for x in s.split(",") if x.strip()]
+
+        self.opt.train_classes = _split_csv(self.opt.train_classes)
+        self.opt.test_classes = _split_csv(self.opt.test_classes)
 
         # GPU
         os.environ["CUDA_VISIBLE_DEVICES"] = self.opt.gpu_ids

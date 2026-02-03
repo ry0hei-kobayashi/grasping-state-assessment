@@ -100,6 +100,47 @@ def load_data(path, clas, init, length, log):
     # csvFile_train.close()
 
 
+DEFAULT_INIT = {
+    "appbox": 10,
+    "baisui": 10,
+    "bingho": 10,
+    "cesbon": 10,
+    "cokele": 5,
+    "haitun": 5,
+    "jianjo": 5,
+    "nongf1": 5,
+    "pacup1": 5,
+    "pacup2": 5,
+    "songsu": 7,
+    "zhijin": 4,
+}
+
+
+def train_test_dataset(
+    path, visual_seq_length, tactile_seq_length, log, flag, train_classes, test_classes
+):
+
+    def _load_many(class_list):
+        all_cases = []
+        for clas in class_list:
+            init = DEFAULT_INIT.get(clas, 5)
+            all_cases += load_data(
+                path, clas, init=init, length=visual_seq_length, log=log
+            )
+        return all_cases
+
+    train_dataset = _load_many(train_classes)
+    test_dataset = _load_many(test_classes)
+
+    if flag == "train":
+        return train_dataset
+    elif flag == "test":
+        return test_dataset
+    else:
+        raise ValueError(f"Unknown flag: {flag}")
+
+
+"""
 def train_test_dataset(path, visual_seq_length, tactile_seq_length, log, flag):
     appbox = load_data(path, "appbox", 10, visual_seq_length, log)
     baisui = load_data(path, "baisui", 10, visual_seq_length, log)
@@ -123,6 +164,7 @@ def train_test_dataset(path, visual_seq_length, tactile_seq_length, log, flag):
     elif flag == "test":
         dataset = test_dataset
     return dataset
+"""
 
 
 class MyDataset(Dataset):
@@ -135,10 +177,42 @@ class MyDataset(Dataset):
         transform_t,
         log,
         flag,
+        train_classes=None,
+        test_classes=None,
     ):
         self.image_paths = image_paths
         self.visual_seq_length = visual_seq_length
         self.tactile_seq_length = tactile_seq_length
+        self.transform_v = transform_v
+        self.transform_t = transform_t
+        self.log = log
+        self.flag = flag
+
+        if train_classes is None:
+            train_classes = [
+                "appbox",
+                "baisui",
+                "bingho",
+                "cokele",
+                "haitun",
+                "jianjo",
+                "pacup1",
+                "pacup2",
+                "zhijin",
+            ]
+        if test_classes is None:
+            test_classes = ["cesbon", "nongf1", "songsu"]
+
+        self.dataset = train_test_dataset(
+            self.image_paths,
+            self.visual_seq_length,
+            self.tactile_seq_length,
+            log,
+            flag,
+            train_classes=train_classes,
+            test_classes=test_classes,
+        )
+
         self.transform_v = transform_v
         self.transform_t = transform_t
         # self.csvReader=csv.reader(open(image_paths))
@@ -148,9 +222,9 @@ class MyDataset(Dataset):
         self.classes = ["0", "1", "2"]
         self.log = log
         self.flag = flag
-        self.dataset = train_test_dataset(
-            self.image_paths, self.visual_seq_length, self.tactile_seq_length, log, flag
-        )
+        # self.dataset = train_test_dataset(
+        #    self.image_paths, self.visual_seq_length, self.tactile_seq_length, log, flag
+        # )
         # self.tactile_sequence_length=[]
         le = LabelEncoder()
         le.fit(self.classes)
