@@ -20,8 +20,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torchvision.transforms as transforms
 
+
 try:
     import pynvml
+
     _NVML_OK = True
     print("nvml is True")
 except Exception:
@@ -31,9 +33,19 @@ except Exception:
 
 def main():
     opt = Options().parse()
+    title = opt.name
 
-    os.makedirs("XELA_results", exist_ok=True)
+    # Options側で決めたrun_dirをそのまま使う（ここが唯一の正）
+    run_dir = opt.run_dir
+    results_dir = opt.results_dir  # Optionsで作ってある想定
+    # opt.checkpoint も Optionsで run_dir/checkpoints に設定済み
+
+    os.makedirs(results_dir, exist_ok=True)
     os.makedirs(opt.checkpoint, exist_ok=True)
+    print("RUN_DIR =", run_dir, flush=True)
+
+    # os.makedirs("XELA_results", exist_ok=True)
+    # os.makedirs(opt.checkpoint, exist_ok=True)
 
     start_epoch = opt.start_epoch  # start from epoch 0 or last checkpoint epoch
     opt.phase = "train"
@@ -204,30 +216,29 @@ def main():
     )
 
     # Loss and optimizer
-    optimizer = torch.optim.SGD(model.parameters(), lr=opt.lr) #default
+    optimizer = torch.optim.SGD(model.parameters(), lr=opt.lr)  # default
 
     # criterion = nn.CrossEntropyLoss(reduction='sum')
     # optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr,betas=(0.9, 0.999), eps=1e-08,weight_decay=opt.weight_decay)
     # model.apply(init_weights_xavier)
 
     # Resume
-    title = opt.name
+    best_acc = 0.0
+
     if opt.resume:
-        # Load checkpoint.
         print("==> Resuming from checkpoint..")
-        assert os.path.isfile(opt.resume), "Error: no checkpoint directory found!"
-        opt.checkpoint = os.path.dirname(opt.resume)
-        checkpoint = torch.load(opt.resume)
-        best_acc = checkpoint["best_acc"]
+        assert os.path.isfile(opt.resume), "Error: no checkpoint file found!"
+
+        checkpoint = torch.load(opt.resume)  # 必要なら map_location を追加
+        best_acc = checkpoint.get("best_acc", 0.0)
         start_epoch = checkpoint["epoch"]
+
         model.load_state_dict(checkpoint["state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer"])
-        logger = Logger(
-            os.path.join(opt.checkpoint, "log.txt"), title=title, resume=True
-        )
+
+        logger = Logger(os.path.join(run_dir, "log.txt"), title=title, resume=True)
     else:
-        logger = Logger(os.path.join(opt.checkpoint, "log.txt"), title=title)
-        # logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Valid PSNR.'])
+        logger = Logger(os.path.join(run_dir, "log.txt"), title=title)
         logger.set_names(
             [
                 "Learning Rate",
@@ -247,6 +258,11 @@ def main():
             ]
         )
 
+    # opt.checkpoint = os.path.join(run_dir, "checkpoints")
+    # results_dir = os.path.join(run_dir, "results")
+    # os.makedirs(results_dir, exist_ok=True)
+    # os.makedirs(opt.checkpoint, exist_ok=True)
+
     if opt.evaluate:
         print("\nEvaluation only")
         val_loss, val_psnr = valid(val_loader, model, start_epoch, opt.use_cuda)
@@ -255,7 +271,7 @@ def main():
 
     # Train and val
 
-    best_acc = 0
+    # best_acc = 0
     train_acc_list = []
     train_loss_list = []
     test_acc_list = []
@@ -375,41 +391,65 @@ def main():
     # print("average acc:",ave_acc/len(acc_list))
     logger.close()
     np.save(
-        "XELA_results/train_acc_"
-        + opt.model_arch
-        + str(opt.batchSize)
-        + "_"
-        + str(opt.lr)
-        + ".npy",
+        os.path.join(
+            results_dir, f"train_acc_{opt.model_arch}_bs{opt.batchSize}_lr{opt.lr}.npy"
+        ),
         train_acc_list,
     )
     np.save(
-        "XELA_results/train_loss_"
-        + opt.model_arch
-        + str(opt.batchSize)
-        + "_"
-        + str(opt.lr)
-        + ".npy",
+        os.path.join(
+            results_dir, f"train_loss_{opt.model_arch}_bs{opt.batchSize}_lr{opt.lr}.npy"
+        ),
         train_loss_list,
     )
     np.save(
-        "XELA_results/test_acc_"
-        + opt.model_arch
-        + str(opt.batchSize)
-        + "_"
-        + str(opt.lr)
-        + ".npy",
+        os.path.join(
+            results_dir, f"test_acc_{opt.model_arch}_bs{opt.batchSize}_lr{opt.lr}.npy"
+        ),
         test_acc_list,
     )
     np.save(
-        "XELA_results/test_loss_"
-        + opt.model_arch
-        + str(opt.batchSize)
-        + "_"
-        + str(opt.lr)
-        + ".npy",
+        os.path.join(
+            results_dir, f"test_loss_{opt.model_arch}_bs{opt.batchSize}_lr{opt.lr}.npy"
+        ),
         test_loss_list,
     )
+    # np.save(
+    #    "XELA_results/train_acc_"
+    #    + opt.model_arch
+    #    + str(opt.batchSize)
+    #    + "_"
+    #    + str(opt.lr)
+    #    + ".npy",
+    #    train_acc_list,
+    # )
+    # np.save(
+    #    "XELA_results/train_loss_"
+    #    + opt.model_arch
+    #    + str(opt.batchSize)
+    #    + "_"
+    #    + str(opt.lr)
+    #    + ".npy",
+    #    train_loss_list,
+    # )
+    # np.save(
+    #    "XELA_results/test_acc_"
+    #    + opt.model_arch
+    #    + str(opt.batchSize)
+    #    + "_"
+    #    + str(opt.lr)
+    #    + ".npy",
+    #    test_acc_list,
+    # )
+    # np.save(
+    #    "XELA_results/test_loss_"
+    #    + opt.model_arch
+    #    + str(opt.batchSize)
+    #    + "_"
+    #    + str(opt.lr)
+    #    + ".npy",
+    #    test_loss_list,
+    # )
     plt.plot(train_loss_list)
     plt.plot(train_acc_list)
     plt.plot(test_loss_list)
@@ -417,7 +457,17 @@ def main():
 
     plt.show()
     logger.plot()
-    savefig(os.path.join(opt.checkpoint, 'log'+'.eps'))
+    # savefig(os.path.join(opt.checkpoint, "log" + ".eps"))
+    savefig(os.path.join(run_dir, "log" + ".eps"))
+
+    with open(os.path.join(run_dir, "run_info.txt"), "w") as f:
+        f.write(f"run_dir: {run_dir}\n")
+        f.write(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES','')}\n")
+        f.write(
+            f"NVIDIA_VISIBLE_DEVICES: {os.environ.get('NVIDIA_VISIBLE_DEVICES','')}\n"
+        )
+        f.write(str(opt) + "\n")
+    print("RUN_DIR =", run_dir)
 
 
 def train(trainloader, model, optimizer, epoch, use_cuda):
